@@ -12,7 +12,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open the printed localhost URL. `pnpm test` runs the rule and Word round-trip/security tests. `pnpm build` produces `dist/`. For the browser smoke test, install Microsoft Edge and run `node tests/browser.mjs` while the dev server is running. The browser test uses headless Edge and saves screenshots in `docs/screenshots/`. On systems without Edge, change its Playwright launch channel or install a supported browser.
+Open the printed localhost URL. `pnpm test` runs the rule and Word round-trip/security tests. `pnpm build` produces `dist/`. For the browser smoke test, install Microsoft Edge and run `node tests/browser.mjs`; it starts and stops its own preview server and saves screenshots in `docs/screenshots/`. Run `node tests/pages.mjs` after building to verify the production editor under the `/AI-Detection/` path. On systems without Edge, change the Playwright launch channel or install a supported browser.
 
 ## GitHub Pages
 
