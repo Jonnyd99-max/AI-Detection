@@ -1,0 +1,47 @@
+import {chromium} from '@playwright/test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import {spawn} from 'node:child_process';
+const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','5173','--strictPort'],{windowsHide:true,stdio:'ignore'});
+for(let i=0;i<60;i++){try{await fetch('http://127.0.0.1:5173/');break;}catch{await new Promise(r=>setTimeout(r,100));}}
+const browser=await chromium.launch({channel:'msedge',headless:true});
+const page=await browser.newPage({viewport:{width:1440,height:1000}});
+page.setDefaultTimeout(10000);
+const errors=[];page.on('pageerror',e=>errors.push(e.message));
+try{
+ await page.goto('http://127.0.0.1:5173/');
+ await page.getByRole('button',{name:'Load demo'}).click();
+ await page.waitForSelector('.finding');
+ assert.equal(await page.locator('.brand-mark').innerText(),'jd');
+ const editor=page.getByRole('textbox',{name:'Document editor'});
+ assert.match(await editor.innerText(),/A clearer way forward/);
+ const first=page.locator('.finding').filter({hasText:'It is important to note'}).first();await first.click();
+ await page.getByRole('button',{name:'Apply',exact:true}).click();
+ assert.match(await editor.innerText(),/Note that small/);
+ await page.getByRole('button',{name:'Undo',exact:true}).click();assert.match(await editor.innerText(),/It is important to note/);
+ await page.getByRole('button',{name:'Redo',exact:true}).click();assert.match(await editor.innerText(),/Note that small/);
+ await page.getByRole('button',{name:'Preview cleanup',exact:true}).click();
+ assert.equal(await page.locator('[data-cleanup]').count(),2);
+ await page.getByRole('button',{name:'Apply selected',exact:true}).click();
+ assert.match(await editor.innerText(),/👩‍💻/);assert.doesNotMatch(await editor.innerText(),/\u200b|\u00a0/);
+ await page.getByLabel('Show invisibles').check();
+ assert.ok(await page.locator('.character-label').count()>0);
+ await page.locator('#download').click();
+ const downloadPromise=page.waitForEvent('download');await page.getByRole('button',{name:'Download Word (.docx)',exact:true}).click();const download=await downloadPromise;await download.saveAs('tests/roundtrip.docx');
+ await page.getByLabel('Show invisibles').uncheck();
+ await page.getByRole('button',{name:'Upload Word',exact:false}).click();await page.locator('#file').setInputFiles('tests/roundtrip.docx');await page.getByRole('button',{name:'Import basic content'}).click();
+ await page.waitForTimeout(150);assert.match(await editor.innerText(),/Note that small/);assert.ok(await editor.locator('strong').count());assert.ok(await editor.locator('em').count());assert.ok(await editor.locator('ul').count());assert.match(await editor.innerText(),/👩‍💻/);
+ await page.getByRole('button',{name:'New document',exact:false}).click();await editor.fill('Leverage this. Leverage that. A leveraged tool.');
+ await page.locator('.finding').filter({hasText:'Leverage'}).first().click();await page.getByRole('button',{name:'Preview replace all',exact:true}).click();assert.match(await page.locator('#modal h2').innerText(),/2 occurrences/);await page.getByRole('button',{name:'Apply all',exact:true}).click();assert.equal(await editor.innerText(),'Use this. Use that. A leveraged tool.');
+ await page.getByRole('button',{name:'Undo',exact:true}).click();assert.match(await editor.innerText(),/Leverage this/);
+ await editor.press('Home');await editor.press('Control+Home');await editor.pressSequentially('Prefix ');await page.locator('.finding').filter({hasText:'Leverage'}).first().click();await page.getByRole('button',{name:'Apply',exact:true}).click();assert.match(await editor.innerText(),/Prefix Use this/);
+ await page.getByRole('button',{name:'New document',exact:false}).click();assert.ok(await page.getByRole('heading',{name:'Replace your document?'}).isVisible());await page.getByRole('button',{name:'Cancel',exact:true}).click();
+ await page.locator('#download').click();const txtPromise=page.waitForEvent('download');await page.getByRole('button',{name:'Download plain text (.txt)',exact:true}).click();await txtPromise;
+ await page.getByRole('button',{name:'Load demo'}).click();
+ await fs.mkdir('docs/screenshots',{recursive:true});await page.screenshot({path:'docs/screenshots/desktop.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});await page.screenshot({path:'docs/screenshots/mobile.png',fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ await editor.focus();await page.keyboard.press('Control+Home');await page.keyboard.press('Control+Shift+ArrowRight');await page.keyboard.press('Control+b');assert.ok(await editor.locator('strong').count());
+ await page.keyboard.press('Tab');assert.ok(await page.evaluate(()=>document.activeElement!==document.body));
+ await page.locator('.finding').filter({hasText:'leverage'}).first().click();await page.getByRole('button',{name:'Ignore occurrence',exact:true}).click();const count=await page.locator('#count').innerText();await editor.focus();await editor.press('Control+Home');await editor.pressSequentially('Hello ');assert.equal(await page.locator('#count').innerText(),count);
+ assert.deepEqual(errors,[]);console.log('Browser checks passed: replacement, previews, stale positions, joiner preservation, undo/redo, valid Word round trip, formatting, downloads, unsaved warning, mobile overflow and keyboard focus.');
+}finally{await browser.close();server.kill();}
